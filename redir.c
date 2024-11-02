@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 // #include <sys/types>
 
 /*
-    // ./redir - "cmd param parm"
+    // ./redir - "cmd param parm" -
     // 1) break argv[2] into words
     // 2) find the aboslute path of the command
 */
@@ -52,7 +53,7 @@ void add_character_to_string(char* str, char c) {
 }
 
 // splits string by spaces; adds a NULL int to the array after the last word
-void break_into_words(char* cmd, char* words[], char delimiter) {
+void split(char* cmd, char* words[], char delimiter) {
     int word_ct = 0;
     char* next_char = cmd;
     char current_word[10000];
@@ -72,12 +73,11 @@ void break_into_words(char* cmd, char* words[], char delimiter) {
 }
 
 // true, false
-
 bool find_absolute_path(char* cmd, char* absolute_path) {
     // break path up by ";"
     char* directories[1000];
 
-    break_into_words(getenv("PATH"), directories, ':');
+    split(getenv("PATH"), directories, ':');
 
     // look in array until I find the paththing+cmd
     for (int idx = 0; directories[idx] != NULL; idx++) {
@@ -91,44 +91,72 @@ bool find_absolute_path(char* cmd, char* absolute_path) {
             return true;
         }
     }
-
     return false;
 }
 
 int main(int argc, char* argv[]) {
     char absolute_path[1000];
-    char* words[1000];
+    char* cmd[1000];
 
-    break_into_words(argv[2], words, ' ');
+    if (argc < 4) {
+        fprintf(stderr, "Usage: %s <input> <cmd> <output> \n", argv[0]);
+        return 1;
+    }
 
-    if (words[0] == NULL) {
+    char* inputFile = argv[1];
+    char* outputFile = argv[3];
+    bool hasInputFile = true;
+    bool hasOutputFile = true;
+
+    if (strcmp(inputFile, "-") == 0) {
+        hasInputFile = false;
+    }
+
+    split(argv[2], cmd, ' ');
+
+    if (cmd[0] == NULL) {
         printf("no command\n");
         return 1;
     }
 
-    for (int idx = 0; words[idx] != NULL; idx++) {
-        printf("word[%d] = %s\n", idx, words[idx]);
+    if (strcmp(outputFile, "-") == 0) {
+        hasOutputFile = false;
     }
 
-    if (!find_absolute_path(words[0], absolute_path)) {
-        printf("no absolute path found\n");
+    for (int idx = 0; cmd[idx] != NULL; idx++) {
+        printf("word[%d] = %s\n", idx, cmd[idx]);
+    }
+
+    if (!hasInputFile && !hasOutputFile) {
+        if (!find_absolute_path(cmd[0], absolute_path)) {
+            printf("no absolute path found\n");
+            return 1;
+        };
+
+        execve(absolute_path, cmd, NULL);
+        printf("exccve failed\n");
         return 1;
-    };
+    }
 
-    // strcpy(absolute_path, argv[2]);
-    // words[0] = strdup(argv[2]);
-    // words[1] = NULL;
+    // if first command in pipeline has input redirection
+    if (hasInputFile) { 
+        int fdin = open(inputFile, O_RDONLY, 0644);
+        dup2(fdin, STDIN_FILENO);
+        close(fdin);
+    }
 
-    execve(absolute_path, words, NULL);
+    // if last command in pipeline has output redirection
+    if (hasOutputFile) { 
+        int fdout = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        dup2(fdout, STDOUT_FILENO);
+        close(fdout);
+    }
+
+    execve(inputFile, cmd, NULL);
     printf("exccve failed\n");
     return 1;
-    //     return 0;
 
-    //     if (argc < 4) {
-    //         fprintf(stderr,
-    //             "Usage: %s <input> <cmd> <output> \n", argv[0]);
-    //         return 1;
-    //     }
+
 
     //     // int commands_separator_ix;
 
